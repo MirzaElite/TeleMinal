@@ -1,30 +1,46 @@
 import os
-import requests
+import paramiko
+import logging
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, CallbackContext
 
-TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
-TUNNEL_URL = 'https://yoursubdomain.ngrok.io'
+# Set up logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-def start(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text('Send me a command to execute!')
+# Set up the SSH client
+ssh = paramiko.SSHClient()
+ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-def execute_command(update: Update, context: CallbackContext) -> None:
-    command = update.message.text[5:]
-    response = requests.post(f'{TUNNEL_URL}/command', json={'command': command})
+# Replace these variables with your own values
+LINUX_HOST = "your_linux_host"
+LINUX_USER = "your_linux_user"
+LINUX_PASSWORD = "your_linux_password"
 
-    if response.status_code == 200:
-        update.message.reply_text(response.json()['output'])
-    else:
-        update.message.reply_text('Error executing command.')
+# Connect to the Linux machine
+try:
+    ssh.connect(LINUX_HOST, username=LINUX_USER, password=LINUX_PASSWORD)
+except Exception as e:
+    print(f"Failed to connect to Linux machine: {e}")
+    exit(1)
+
+# Define the Telegram bot command handler
+def handle_command(update: Update, context: CallbackContext) -> None:
+    command = update.message.text[len("/"):]
+    stdin, stdout, stderr = ssh.exec_command(command)
+
+    # Print the output to the console
+    for line in stdout:
+        print(line.strip())
+
+    # Send the output back to the Telegram group
+    context.bot.send_message(chat_id=update.effective_chat.id, text=stdout.read().decode())
 
 def main() -> None:
-    updater = Updater(token=TOKEN, use_context=True)
-
+    # Replace TOKEN with your Telegram bot token
+    updater = Updater(token="TOKEN", use_context=True)
     dispatcher = updater.dispatcher
 
-    dispatcher.add_handler(CommandHandler('start', start))
-    dispatcher.add_handler(CommandHandler('cmd', execute_command))
+    dispatcher.add_handler(CommandHandler("run", handle_command))
 
     updater.start_polling()
     updater.idle()
